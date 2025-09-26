@@ -1,0 +1,21 @@
+{
+  "name": "quick-agentic-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.8",
+    "tailwindcss": "^3.4.12",
+    "postcss": "^8.4.45",
+    "autoprefixer": "^10.4.20",
+    "typescript": "^5.6.2"
+  }
+}
