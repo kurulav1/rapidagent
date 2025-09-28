@@ -1,108 +1,186 @@
-import os
 import sqlite3
-import json
-import uuid
-from typing import Any, Dict, List, Optional
+import os
+from datetime import datetime
 
 class Store:
     def __init__(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        self.path = path
+        self.conn = sqlite3.connect(path, check_same_thread=False)
+        self._init_schema()
 
-    def connect(self):
-        con = sqlite3.connect(self.path)
-        con.execute("PRAGMA journal_mode=WAL;")
-        con.execute("PRAGMA synchronous=NORMAL;")
-        con.row_factory = sqlite3.Row
-        return con
+    def _init_schema(self):
+        cur = self.conn.cursor()
 
-    def init(self):
-        con = self.connect()
-        con.execute("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)")
-        con.execute("CREATE TABLE IF NOT EXISTS tools (name TEXT PRIMARY KEY, description TEXT, schema TEXT)")
-        con.execute("CREATE TABLE IF NOT EXISTS agents (name TEXT PRIMARY KEY, llm TEXT)")
-        con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(id, text, meta, content='')")
-        con.execute("CREATE TABLE IF NOT EXISTS conv (id TEXT PRIMARY KEY, transcript TEXT)")
-        con.commit()
-        con.close()
+        # kv store
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS kv (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
 
-    def set_kv(self, k: str, v: str):
-        con = self.connect()
-        con.execute("INSERT INTO kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, v))
-        con.commit()
-        con.close()
+        # agents
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS agents (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                model TEXT,
+                status TEXT,
+                created_at TEXT,
+                last_seen TEXT,
+                system_prompt TEXT
+            )
+        """)
+        cur.execute("PRAGMA table_info(agents)")
+        cols = [row[1] for row in cur.fetchall()]
+        if "system_prompt" not in cols:
+            cur.execute("ALTER TABLE agents ADD COLUMN system_prompt TEXT")
 
-    def get_kv(self, k: str) -> Optional[str]:
-        con = self.connect()
-        cur = con.execute("SELECT v FROM kv WHERE k=?", (k,))
+        # agent_tools
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS agent_tools (
+                agent_id TEXT,
+                tool TEXT,
+                PRIMARY KEY (agent_id, tool)
+            )
+        """)
+
+        # agent_messages
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT,
+                role TEXT,
+                content TEXT,
+                timestamp TEXT
+            )
+        """)
+
+        # traces
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS traces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT,
+                type TEXT,
+                content TEXT,
+                timestamp TEXT
+            )
+        """)
+
+        self.conn.commit()
+
+    # kv
+    def get_kv(self, key: str):
+        cur = self.conn.cursor()
+        cur.execute("SELECT value FROM kv WHERE key=?", (key,))
         row = cur.fetchone()
-        con.close()
-        return row["v"] if row else None
+        return row[0] if row else None
 
-    def upsert_tool(self, name: str, description: str, schema: Dict[str, Any]):
-        con = self.connect()
-        con.execute(
-            "INSERT INTO tools(name,description,schema) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET description=excluded.description,schema=excluded.schema",
-            (name, description, json.dumps(schema)))
-        con.commit()
-        con.close()
+    def set_kv(self, key: str, value: str):
+        cur = self.conn.cursor()
+        cur.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", (key, value))
+        self.conn.commit()
 
-    def list_tools(self) -> List[Dict[str, Any]]:
-        con = self.connect()
-        cur = con.execute("SELECT name, description, schema FROM tools ORDER BY name")
-        rows = [{"name": r["name"], "description": r["description"], "schema": json.loads(r["schema"])} for r in cur.fetchall()]
-        con.close()
-        return rows
+    # agents
+    def create_agent(self, agent_id: str, name: str, model: str, tools, system_prompt: str | None = None):
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO agents (id, name, model, status, created_at, last_seen, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (agent_id, name, model, "idle", datetime.utcnow().isoformat(), None, system_prompt),
+        )
+        self.conn.commit()
+        self.set_agent_tools(agent_id, tools)
+        return agent_id
 
-    def get_tool(self, name: str) -> Optional[Dict[str, Any]]:
-        con = self.connect()
-        cur = con.execute("SELECT name, description, schema FROM tools WHERE name=?", (name,))
-        r = cur.fetchone()
-        con.close()
-        return {"name": r["name"], "description": r["description"], "schema": json.loads(r["schema"])} if r else None
+    def list_agents(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, name, model, status, created_at, last_seen, system_prompt FROM agents")
+        rows = cur.fetchall()
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "model": r[2],
+                "status": r[3],
+                "created_at": r[4],
+                "last_seen": r[5],
+                "system_prompt": r[6],
+            }
+            for r in rows
+        ]
 
-    def upsert_agent(self, name: str, llm: str):
-        con = self.connect()
-        con.execute("INSERT INTO agents(name,llm) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET llm=excluded.llm", (name, llm))
-        con.commit()
-        con.close()
+    def get_agent(self, agent_id: str):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, name, model, status, created_at, last_seen, system_prompt FROM agents WHERE id=?", (agent_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "name": row[1],
+            "model": row[2],
+            "status": row[3],
+            "created_at": row[4],
+            "last_seen": row[5],
+            "system_prompt": row[6],
+        }
 
-    def list_agents(self) -> List[Dict[str, Any]]:
-        con = self.connect()
-        cur = con.execute("SELECT name,llm FROM agents ORDER BY name")
-        rows = [{"name": r["name"], "llm": r["llm"]} for r in cur.fetchall()]
-        con.close()
-        return rows
+    def update_agent_status(self, agent_id: str, status: str):
+        cur = self.conn.cursor()
+        cur.execute(
+            "UPDATE agents SET status=?, last_seen=? WHERE id=?",
+            (status, datetime.utcnow().isoformat(), agent_id),
+        )
+        self.conn.commit()
 
-    def get_agent_llm(self, name: str) -> Optional[str]:
-        con = self.connect()
-        cur = con.execute("SELECT llm FROM agents WHERE name=?", (name,))
-        r = cur.fetchone()
-        con.close()
-        return r["llm"] if r else None
+    def set_agent_system_prompt(self, agent_id: str, prompt: str):
+        cur = self.conn.cursor()
+        cur.execute("UPDATE agents SET system_prompt=? WHERE id=?", (prompt, agent_id))
+        self.conn.commit()
 
-    def upsert_doc(self, doc_id: str, text: str, meta: Dict[str, Any]):
-        con = self.connect()
-        con.execute("INSERT INTO docs(id,text,meta) VALUES(?,?,?)", (doc_id, text, json.dumps(meta)))
-        con.commit()
-        con.close()
+    # tools
+    def set_agent_tools(self, agent_id: str, tools):
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM agent_tools WHERE agent_id=?", (agent_id,))
+        for t in tools:
+            cur.execute("INSERT OR IGNORE INTO agent_tools (agent_id, tool) VALUES (?, ?)", (agent_id, t))
+        self.conn.commit()
 
-    def search_docs(self, query: str, k: int) -> List[Dict[str, Any]]:
-        con = self.connect()
-        cur = con.execute("SELECT id, text, meta, rank FROM (SELECT id, text, meta, bm25(docs, 10.0, 1.0) as rank FROM docs WHERE docs MATCH ?) ORDER BY rank LIMIT ?", (query, k))
-        rows = [{"id": r["id"], "text": r["text"], "metadata": json.loads(r["meta"])} for r in cur.fetchall()]
-        con.close()
-        return rows
+    def get_agent_tools(self, agent_id: str):
+        cur = self.conn.cursor()
+        cur.execute("SELECT tool FROM agent_tools WHERE agent_id=?", (agent_id,))
+        return [r[0] for r in cur.fetchall()]
 
-    def append_conversation(self, transcript: List[Dict[str, str]]):
-        con = self.connect()
-        cid = self.random_id()
-        con.execute("INSERT INTO conv(id, transcript) VALUES(?,?)", (cid, json.dumps(transcript, ensure_ascii=False)))
-        con.commit()
-        con.close()
+    # messages
+    def add_agent_message(self, agent_id: str, role: str, content: str):
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO agent_messages (agent_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            (agent_id, role, content, datetime.utcnow().isoformat()),
+        )
+        self.conn.commit()
 
-    def list_llms(self) -> List[str]:
-        return ["openai:gpt-4o-mini", "openai:gpt-4o"]
+    def get_agent_messages(self, agent_id: str):
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT role, content, timestamp FROM agent_messages WHERE agent_id=? ORDER BY id ASC",
+            (agent_id,),
+        )
+        return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in cur.fetchall()]
 
-    def random_id(self) -> str:
-        return uuid.uuid4().hex
+    # traces
+    def add_trace(self, agent_id: str, type: str, content: str):
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO traces (agent_id, type, content, timestamp) VALUES (?, ?, ?, ?)",
+            (agent_id, type, content, datetime.utcnow().isoformat()),
+        )
+        self.conn.commit()
+
+    def list_traces(self, agent_id: str):
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT type, content, timestamp FROM traces WHERE agent_id=? ORDER BY id ASC",
+            (agent_id,),
+        )
+        return [{"type": r[0], "content": r[1], "timestamp": r[2]} for r in cur.fetchall()]

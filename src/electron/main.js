@@ -1,16 +1,23 @@
 const { app, BrowserWindow } = require("electron")
 const path = require("path")
 
+let mainWindow
+
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    webPreferences: { nodeIntegration: false }
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+    },
   })
-  if (process.env.NODE_ENV === "development") {
-    win.loadURL("http://localhost:5173")
+
+  // In dev, load Vite dev server
+  if (process.env.ELECTRON_DEV) {
+    mainWindow.loadURL("http://localhost:5173")
   } else {
-    win.loadFile(path.join(__dirname, "../../frontend/dist/index.html"))
+    // In prod, load built frontend
+    mainWindow.loadFile(path.join(__dirname, "../frontend/dist/index.html"))
   }
 }
 

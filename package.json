@@ -1,18 +1,23 @@
 {
-  "name": "quick-agentic-app",
+  "name": "rapidagent",
   "version": "0.1.0",
-  "main": "src/electron/main.js",
+  "private": true,
   "scripts": {
-    "dev:backend": "cd src/backend && uvicorn quick_agentic.app:app --reload --port 8000",
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\" \"npm:dev:electron\"",
+    "dev:web": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "poetry run uvicorn rapidagent.app:app --reload --port 8000 --app-dir src/backend",
     "dev:frontend": "cd src/frontend && vite",
-    "dev:electron": "wait-on http://localhost:5173 && electron ."
-  },
+    "dev:electron": "cross-env ELECTRON_DEV=1 electron src/electron/main.js",
+    "build:frontend": "cd src/frontend && vite build",
+    "start:electron": "electron src/electron/main.js"
+  }
+,
   "devDependencies": {
-    "concurrently": "^9.0.0",
-    "wait-on": "^7.0.1",
-    "electron": "^31.0.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.8"
+    "concurrently": "^9.0.0",
+    "electron": "^31.0.0",
+    "vite": "^5.4.8",
+    "wait-on": "^7.0.1"
   },
   "dependencies": {
     "react": "^18.3.1",

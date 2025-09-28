@@ -1,120 +1,153 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-from .llms import LLMRegistry
-from .tools import ToolRegistry, BuiltinTools
-from .rag import RAG
+from typing import List, Dict
+from fastapi.middleware.cors import CORSMiddleware
+from uuid import uuid4
 from .store import Store
+from .llms import LLMRegistry
+from .tools import ToolRegistry
 
-app = FastAPI(title="RapidAgent")
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
 
 store = Store("data/rapidagent.db")
-store.init()
-rag = RAG(store)
-tools = ToolRegistry(store)
-llms = LLMRegistry(store)
-BuiltinTools.install(tools)
+tools = ToolRegistry()
+llms = LLMRegistry(store, tools)
 
-class Message(BaseModel):
-    role: str
-    content: str
 
 class ChatRequest(BaseModel):
-    llm: Optional[str] = None
-    agent: Optional[str] = None
-    messages: List[Message]
-    tools: Optional[List[str]] = None
-    rag: Optional[Dict[str, Any]] = None
-    max_steps: int = 6
+    provider: str | None = None
+    model: str | None = None
+    messages: List[Dict[str, str]]
+
+
+class AgentCreateRequest(BaseModel):
+    name: str
+    model: str
+    tools: List[str] = []
+    system_prompt: str | None = None
+
+
+class ReActRequest(BaseModel):
+    provider: str
+    model: str
+    task: str
+
+
+class ToolRequest(BaseModel):
+    name: str
+    input: str
+
 
 @app.get("/health")
 def health():
     return {"ok": True}
 
-@app.get("/llms")
-def list_llms():
-    return {"llms": llms.list(), "default": llms.default()}
 
-@app.post("/llms/set_default")
-def set_default_llm(payload: Dict[str, str]):
-    name = payload.get("name")
-    if not name:
-        raise HTTPException(400, "name required")
-    llms.set_default(name)
-    return {"default": llms.default()}
+@app.get("/providers")
+def list_providers():
+    return {"providers": llms.list_providers()}
 
-@app.get("/tools")
-def list_tools():
-    return {"tools": tools.list()}
 
-@app.post("/tools/register")
-def register_tool(payload: Dict[str, Any]):
-    tools.register(payload["name"], payload["description"], payload["schema"])
-    return {"ok": True}
+@app.get("/models/{provider}")
+def list_models(provider: str):
+    return {"models": llms.list_models(provider)}
 
-@app.post("/tools/call")
-def call_tool(payload: Dict[str, Any]):
-    return {"result": tools.call(payload["name"], payload.get("args", {}))}
+
+@app.post("/requests/chat")
+def chat(req: ChatRequest):
+    if not req.provider or not req.model:
+        raise HTTPException(status_code=400, detail="provider and model are required")
+    output = llms.run(req.provider, req.model, req.messages)
+    return {"messages": req.messages + [{"role": "assistant", "content": output}]}
+
+
+@app.post("/agents")
+def create_agent(req: AgentCreateRequest):
+    agent_id = str(uuid4())
+    store.create_agent(agent_id, req.name, req.model, req.tools, req.system_prompt)
+    return {"id": agent_id}
+
 
 @app.get("/agents")
 def list_agents():
     return {"agents": store.list_agents()}
 
-@app.post("/agents/create")
-def create_agent(payload: Dict[str, str]):
-    store.upsert_agent(payload["name"], payload.get("llm") or llms.default())
-    return {"ok": True}
 
-@app.post("/rag/docs/upsert")
-def upsert_docs(payload: Dict[str, Any]):
-    rag.upsert(payload["docs"])
-    return {"ok": True}
+@app.get("/agents/{agent_id}")
+def get_agent(agent_id: str):
+    agent = store.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    tools = store.get_agent_tools(agent_id)
+    messages = store.get_agent_messages(agent_id)
+    return {"agent": agent, "tools": tools, "messages": messages}
 
-@app.post("/rag/query")
-def query_rag(payload: Dict[str, Any]):
-    return {"results": rag.query(payload["query"], payload.get("k", 5))}
 
-@app.post("/requests/chat")
-def chat(payload: ChatRequest):
-    if payload.rag:
-        ctx = rag.query(payload.rag["query"], payload.rag.get("k", 3))
-        ctx_text = "\n\n".join([r["text"] for r in ctx])
-        payload.messages = payload.messages + [Message(role="system", content=f"RAG context:\n{ctx_text}")]
+@app.post("/agents/{agent_id}/chat")
+def agent_chat(agent_id: str, req: ChatRequest):
+    agent = store.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
 
-    target_llm = payload.llm or (store.get_agent_llm(payload.agent) if payload.agent else llms.default())
-    if not target_llm:
-        raise HTTPException(400, "no llm specified and no default set")
+    store.update_agent_status(agent_id, "running")
+    try:
+        tools = store.get_agent_tools(agent_id)
+        system_prompt = agent.get("system_prompt")
+        history = store.get_agent_messages(agent_id)
 
-    transcript = [{"role": m.role, "content": m.content} for m in payload.messages]
-    step = 0
-    while True:
-        out = llms.run(target_llm, transcript)
-        try:
-            maybe = out.strip()
-            if maybe.startswith("{") and maybe.endswith("}"):
-                as_json = tools.try_parse_json(maybe)
-                if "final" in as_json:
-                    transcript.append({"role": "assistant", "content": as_json["final"]})
-                    break
-                if "tool" in as_json:
-                    name = as_json["tool"]
-                    args = as_json.get("args", {})
-                    if payload.tools and name not in payload.tools:
-                        transcript.append({"role": "assistant", "content": f"tool {name} not allowed"})
-                        break
-                    result = tools.call(name, args)
-                    transcript.append({"role": "tool", "content": tools.to_json({"name": name, "result": result})})
-                else:
-                    transcript.append({"role": "assistant", "content": out})
-                    break
-            else:
-                transcript.append({"role": "assistant", "content": out})
-                break
-        except Exception:
-            transcript.append({"role": "assistant", "content": out})
-            break
-        step += 1
-        if step >= payload.max_steps:
-            break
-    store.append_conversation(transcript)
-    return {"messages": transcript}
+        all_messages = []
+        if system_prompt:
+            all_messages.append({"role": "system", "content": system_prompt})
+        all_messages.extend(history)
+        all_messages.extend(req.messages)
+
+        if tools:
+            trace = llms.run_react("openai", agent["model"], req.messages[-1]["content"], tools=tools)
+            for step in trace:
+                role = step.get("role", "assistant")
+                content = step.get("content", "")
+                store.add_trace(agent_id, role, content)
+            output = trace[-1]["content"]
+        else:
+            output = llms.run("openai", agent["model"], all_messages)
+
+        for m in req.messages:
+            store.add_agent_message(agent_id, m["role"], m["content"])
+        store.add_agent_message(agent_id, "assistant", output)
+
+        store.update_agent_status(agent_id, "idle")
+        return {"messages": all_messages + [{"role": "assistant", "content": output}]}
+    except Exception as e:
+        store.update_agent_status(agent_id, "error")
+        raise e
+
+
+@app.post("/requests/react")
+def react(req: ReActRequest):
+    trace = llms.run_react(req.provider, req.model, req.task)
+    return {"trace": trace}
+
+
+@app.get("/tools")
+def list_tools():
+    return {"tools": tools.list()}
+
+
+@app.post("/tools/run")
+def run_tool(req: ToolRequest):
+    output = tools.run(req.name, req.input)
+    return {"output": output}
+
+
+@app.get("/agents/{agent_id}/traces")
+def get_traces(agent_id: str):
+    return {"traces": store.list_traces(agent_id)}

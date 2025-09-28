@@ -1,21 +1,24 @@
 {
   "name": "quick-agentic-frontend",
   "private": true,
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+   "scripts": {
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\" \"npm:dev:electron\"",
+    "dev:web": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "poetry run uvicorn rapidagent.app:app --reload --port 8000 --app-dir src/backend",
+    "dev:frontend": "cd src/frontend && vite",
+    "dev:electron": "cross-env ELECTRON_DEV=1 electron src/electron/main.js"
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.9.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.8",
-    "tailwindcss": "^3.4.12",
-    "postcss": "^8.4.45",
-    "autoprefixer": "^10.4.20",
-    "typescript": "^5.6.2"
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
   }
 }

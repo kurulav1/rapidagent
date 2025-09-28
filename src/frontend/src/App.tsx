@@ -1,44 +1,35 @@
-import React, { useEffect, useState } from "react"
+import { Routes, Route, Link } from "react-router-dom"
+import ChatPage from "./pages/ChatPage"
+import AgentsPage from "./pages/AgentsPage"
+import AgentMonitorPage from "./pages/AgentMonitorPage"
+import MonitorPage from "./pages/MonitorPage"
 
 export default function App() {
-  const [health, setHealth] = useState("checking...")
-  const [message, setMessage] = useState("")
-  const [reply, setReply] = useState("")
-
-  useEffect(() => {
-    fetch("http://localhost:8000/health")
-      .then(r => r.json())
-      .then(() => setHealth("ok"))
-      .catch(() => setHealth("unavailable"))
-  }, [])
-
-  const send = async () => {
-    const res = await fetch("http://localhost:8000/requests/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        messages: [{ role: "user", content: message }]
-      })
-    })
-    const data = await res.json()
-    setReply(data.messages[data.messages.length - 1].content)
-  }
-
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold">Quick Agentic Console</h1>
-      <p className="mt-2">Backend health: {health}</p>
-      <div className="mt-4 flex gap-2">
-        <input
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          className="border p-2 rounded flex-1"
-        />
-        <button onClick={send} className="bg-black text-white px-4 py-2 rounded">
-          Send
-        </button>
-      </div>
-      {reply && <p className="mt-4 p-2 border rounded">Reply: {reply}</p>}
+    <div className="flex h-screen">
+      <aside className="w-64 bg-gray-100 border-r p-4 flex flex-col">
+        <h1 className="text-xl font-bold mb-6">RapidAgent</h1>
+        <nav className="space-y-2 flex-1">
+          <Link to="/chat" className="block px-2 py-1 hover:bg-gray-200 rounded">
+            Chat
+          </Link>
+          <Link to="/agents" className="block px-2 py-1 hover:bg-gray-200 rounded">
+            Agents
+          </Link>
+          <Link to="/monitor" className="block px-2 py-1 hover:bg-gray-200 rounded">
+            Monitor
+          </Link>
+        </nav>
+      </aside>
+      <main className="flex-1 overflow-y-auto">
+        <Routes>
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/monitor" element={<MonitorPage />} />
+          <Route path="/monitor/:agentId" element={<AgentMonitorPage />} />
+          <Route path="*" element={<ChatPage />} />
+        </Routes>
+      </main>
     </div>
   )
 }

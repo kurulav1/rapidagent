@@ -1,60 +1,39 @@
-import json
-from typing import Dict, Any, Callable, List
-from .store import Store
+from typing import Dict, Callable, Any, List
+import requests
+import math
+
+class Tool:
+    def __init__(self, name: str, description: str, run: Callable[[str], str]):
+        self.name = name
+        self.description = description
+        self.run = run
 
 class ToolRegistry:
-    def __init__(self, store: Store):
-        self.store = store
-        self.functions: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
+    def __init__(self):
+        self.tools = {
+            "search": {
+                "description": "Search the web for information",
+                "run": self.search
+            },
+            "calculator": {
+                "description": "Perform basic math operations",
+                "run": self.calculator
+            }
+        }
 
-    def list(self) -> List[Dict[str, Any]]:
-        return self.store.list_tools()
+    def list(self):
+        return [{"name": name, "description": data["description"]} for name, data in self.tools.items()]
 
-    def register(self, name: str, description: str, schema: Dict[str, Any]):
-        self.store.upsert_tool(name, description, schema)
+    def run(self, name: str, input: str) -> str:
+        if name not in self.tools:
+            return f"Tool {name} not found"
+        return self.tools[name]["run"](input)
 
-    def bind(self, name: str, fn: Callable[[Dict[str, Any]], Any]):
-        self.functions[name] = fn
+    def search(self, query: str) -> str:
+        return f"Search results for '{query}' (placeholder)"
 
-    def call(self, name: str, args: Dict[str, Any]) -> Any:
-        if name in self.functions:
-            return self.functions[name](args)
-        meta = self.store.get_tool(name)
-        if not meta:
-            raise RuntimeError(f"unknown tool {name}")
-        return {"ok": True, "args": args}
-
-    def try_parse_json(self, s: str) -> Dict[str, Any]:
-        return json.loads(s)
-
-    def to_json(self, o: Any) -> str:
-        return json.dumps(o, ensure_ascii=False)
-
-class BuiltinTools:
-    @staticmethod
-    def install(registry: ToolRegistry):
-        def add(args):
-            return args.get("a", 0) + args.get("b", 0)
-
-        def http_get(args):
-            import httpx
-            r = httpx.get(args["url"], timeout=10)
-            return {"status": r.status_code, "text": r.text[:5000]}
-
-        def rag_search(args):
-            from .rag import RAG
-            rag = RAG(registry.store)
-            k = args.get("k", 3)
-            return rag.query(args["query"], k)
-
-        registry.register("add", "add two numbers",
-                          {"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}}, "required": ["a", "b"]})
-        registry.bind("add", add)
-
-        registry.register("http_get", "http get",
-                          {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]})
-        registry.bind("http_get", http_get)
-
-        registry.register("rag_search", "query rag index",
-                          {"type": "object", "properties": {"query": {"type": "string"}, "k": {"type": "integer"}}, "required": ["query"]})
-        registry.bind("rag_search", rag_search)
+    def calculator(self, expr: str) -> str:
+        try:
+            return str(eval(expr, {}, {}))
+        except Exception as e:
+            return f"Error: {e}"
