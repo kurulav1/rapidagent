@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { api } from "../lib/api"
+import {
+  Badge,
+  Card,
+  Group,
+  Loader,
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core"
 
 interface Agent {
   id: string
@@ -12,52 +21,64 @@ interface Agent {
 
 export default function MonitorPage() {
   const [agents, setAgents] = useState<Agent[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAgents = () => {
       api<{ agents: Agent[] }>("/agents")
         .then(data => setAgents(data.agents))
         .catch(err => console.error("Failed to load agents", err))
+        .finally(() => setLoading(false))
     }
     fetchAgents()
     const interval = setInterval(fetchAgents, 5000)
     return () => clearInterval(interval)
   }, [])
 
+  if (loading) return <Loader m="lg" />
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Agent Monitor</h1>
-      {agents.length === 0 && (
-        <p className="text-gray-500">No agents detected</p>
+    <Stack p="md" gap="md">
+      <Title order={2}>Agent Monitor</Title>
+      {agents.length === 0 ? (
+        <Text c="dimmed">No agents detected</Text>
+      ) : (
+        <Stack gap="sm">
+          {agents.map(agent => (
+            <Card
+              key={agent.id}
+              withBorder
+              shadow="sm"
+              component={Link}
+              to={`/monitor/${agent.id}`}
+              style={{ textDecoration: "none" }}
+            >
+              <Group justify="space-between">
+                <Stack gap={2}>
+                  <Text fw={500}>{agent.name}</Text>
+                  <Text size="sm" c="dimmed">
+                    Model: {agent.model}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Created: {new Date(agent.created_at).toLocaleString()}
+                  </Text>
+                </Stack>
+                <Badge
+                  color={
+                    agent.status === "idle"
+                      ? "green"
+                      : agent.status === "running"
+                      ? "blue"
+                      : "red"
+                  }
+                >
+                  {agent.status}
+                </Badge>
+              </Group>
+            </Card>
+          ))}
+        </Stack>
       )}
-      <div className="space-y-3">
-        {agents.map(agent => (
-          <Link
-            key={agent.id}
-            to={`/monitor/${agent.id}`}
-            className="block border rounded p-4 hover:bg-gray-50"
-          >
-            <h2 className="font-medium">{agent.name}</h2>
-            <p className="text-sm text-gray-600">
-              Model: {agent.model} • Status:{" "}
-              <span
-                className={
-                  agent.status === "idle"
-                    ? "text-green-600"
-                    : agent.status === "running"
-                    ? "text-blue-600"
-                    : "text-red-600"
-                }
-              >
-                {agent.status}
-              </span>
-            </p>
-            <p className="text-xs text-gray-400">
-              Created: {new Date(agent.created_at).toLocaleString()}
-            </p>
-          </Link>
-        ))}
-      </div>
-    </div>
+    </Stack>
   )
 }

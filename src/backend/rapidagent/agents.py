@@ -1,120 +1,80 @@
 import uuid
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Generator
 from .llms import LLMRegistry
 from .tools import ToolRegistry
+from .store import Store
 
 class Agent:
-    def __init__(self, name: str, model: str, tools: List[str]):
-        self.id = str(uuid.uuid4())
+    def __init__(self, agent_id: str, name: str, model: str, tools: List[str], status: str = "idle"):
+        self.id = agent_id
         self.name = name
         self.model = model
         self.tools = tools
-        self.status = "idle"
-        self.trace: List[Dict[str, Any]] = []
+        self.status = status
 
 class AgentRegistry:
-    def __init__(self, llms: LLMRegistry, tools: ToolRegistry):
+    def __init__(self, store: Store, llms: LLMRegistry, tools: ToolRegistry):
+        self.store = store
         self.llms = llms
         self.tools = tools
-        self.agents: Dict[str, Agent] = {}
 
-    def list(self, include_trace: bool = False) -> List[Dict[str, Any]]:
-        return [
-            {
-                "id": a.id,
-                "name": a.name,
-                "model": a.model,
-                "tools": a.tools,
-                "status": a.status,
-                **({"trace": a.trace} if include_trace else {})
-            }
-            for a in self.agents.values()
-        ]
+    def create(self, name: str, model: str, tools: List[str], system_prompt: str | None = None) -> str:
+        agent_id = str(uuid.uuid4())
+        self.store.create_agent(agent_id, name, model, tools, system_prompt)
+        return agent_id
 
-    def create(self, name: str, model: str, tools: List[str]) -> Agent:
-        agent = Agent(name, model, tools)
-        self.agents[agent.id] = agent
-        return agent
+    def get(self, agent_id: str) -> Dict[str, Any] | None:
+        agent = self.store.get_agent(agent_id)
+        if not agent:
+            return None
+        agent_tools = self.store.get_agent_tools(agent_id)
+        agent_messages = self.store.get_agent_messages(agent_id)
+        return {"agent": agent, "tools": agent_tools, "messages": agent_messages}
 
-    def run(self, agent_id: str, task: str) -> Dict[str, Any]:
-        if agent_id not in self.agents:
-            raise RuntimeError(f"Agent {agent_id} not found")
+    def list(self) -> List[Dict[str, Any]]:
+        return self.store.list_agents()
 
-        agent = self.agents[agent_id]
-        agent.status = "running"
-        agent.trace = []
+    def run_react(self, agent_id: str, task: str) -> Dict[str, Any]:
+        agent = self.store.get_agent(agent_id)
+        if not agent:
+            raise RuntimeError("Agent not found")
+        self.store.update_agent_status(agent_id, "running")
         try:
-            messages = [
-                {"role": "system", "content": "You are a helpful agent. Think step by step."},
-                {"role": "user", "content": task},
-            ]
-
-            for step in range(3):  # limit steps
-                thought = self.llms.run("openai", agent.model, messages)
-                agent.trace.append({"step": step + 1, "thought": thought})
-
-                if "use_tool:" in thought:
-                    tool_name = thought.split("use_tool:")[1].strip().split()[0]
-                    if tool_name not in agent.tools:
-                        agent.trace.append({"error": f"Tool {tool_name} not allowed"})
-                        break
-                    tool = self.tools.get(tool_name)
-                    tool_input = thought.split("use_tool:")[1].strip().split(maxsplit=1)[1] if " " in thought else ""
-                    result = tool(tool_input)
-                    agent.trace.append({"tool": tool_name, "input": tool_input, "output": result})
-                    messages.append({"role": "assistant", "content": f"(used {tool_name}, got {result})"})
-                else:
-                    agent.trace.append({"final": thought})
-                    agent.status = "done"
-                    return {"result": thought, "trace": agent.trace}
-
-            agent.status = "done"
-            return {"result": agent.trace[-1].get("final", ""), "trace": agent.trace}
+            tools = self.store.get_agent_tools(agent_id)
+            trace = self.llms.run_react("openai", agent["model"], task, tools=tools)
+            for step in trace:
+                role = step.get("role", "assistant")
+                content = step.get("content", "")
+                self.store.add_trace(agent_id, role, content)
+            final = next((s["content"] for s in reversed(trace) if s.get("role") == "final"), "")
+            self.store.update_agent_status(agent_id, "idle")
+            return {"result": final, "trace": trace}
         except Exception as e:
-            agent.status = "error"
-            agent.trace.append({"error": str(e)})
-            return {"error": str(e), "trace": agent.trace}
-def run_stream(self, agent_id: str):
-    if agent_id not in self.agents:
-        yield {"error": f"Agent {agent_id} not found"}
-        return
+            self.store.update_agent_status(agent_id, "error")
+            raise e
 
-    agent = self.agents[agent_id]
-    agent.status = "running"
-    agent.trace = []
-
-    messages = [
-        {"role": "system", "content": "You are a helpful agent. Think step by step."},
-    ]
-
-    try:
-        for step in range(3):
-            thought = self.llms.run("openai", agent.model, messages)
-            agent.trace.append({"step": step + 1, "thought": thought})
-            yield {"type": "thought", "step": step + 1, "content": thought}
-
-            if "use_tool:" in thought:
-                tool_name = thought.split("use_tool:")[1].strip().split()[0]
-                if tool_name not in agent.tools:
-                    error = f"Tool {tool_name} not allowed"
-                    agent.trace.append({"error": error})
-                    yield {"type": "error", "content": error}
-                    break
-
-                tool = self.tools.get(tool_name)
-                tool_input = thought.split("use_tool:")[1].strip().split(maxsplit=1)[1] if " " in thought else ""
-                result = tool(tool_input)
-                agent.trace.append({"tool": tool_name, "input": tool_input, "output": result})
-                yield {"type": "tool", "tool": tool_name, "input": tool_input, "output": result}
-                messages.append({"role": "assistant", "content": f"(used {tool_name}, got {result})"})
-            else:
-                agent.trace.append({"final": thought})
-                agent.status = "done"
-                yield {"type": "final", "content": thought}
-                return
-
-        agent.status = "done"
-    except Exception as e:
-        agent.status = "error"
-        agent.trace.append({"error": str(e)})
-        yield {"type": "error", "content": str(e)}
+    def run_react_stream(self, agent_id: str, task: str) -> Generator[Dict[str, Any], None, None]:
+        agent = self.store.get_agent(agent_id)
+        if not agent:
+            yield {"type": "error", "content": "Agent not found"}
+            return
+        self.store.update_agent_status(agent_id, "running")
+        try:
+            tools = self.store.get_agent_tools(agent_id)
+            messages = []
+            for step in self.llms.run_react("openai", agent["model"], task, tools=tools):
+                role = step.get("role")
+                content = step.get("content", "")
+                self.store.add_trace(agent_id, role, content)
+                if role == "thought":
+                    yield {"type": "thought", "content": content}
+                elif role == "action":
+                    yield {"type": "action", "content": content}
+                elif role == "observation":
+                    yield {"type": "observation", "content": content}
+                elif role == "final":
+                    yield {"type": "final", "content": content}
+            self.store.update_agent_status(agent_id, "idle")
+        except Exception as e:
+            self.store.update_agent_status(agent_id, "error")
+            yield {"type": "error", "content": str(e)}

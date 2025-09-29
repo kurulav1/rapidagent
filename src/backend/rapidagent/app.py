@@ -22,12 +22,10 @@ store = Store("data/rapidagent.db")
 tools = ToolRegistry()
 llms = LLMRegistry(store, tools)
 
-
 class ChatRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     messages: List[Dict[str, str]]
-
 
 class AgentCreateRequest(BaseModel):
     name: str
@@ -35,32 +33,26 @@ class AgentCreateRequest(BaseModel):
     tools: List[str] = []
     system_prompt: str | None = None
 
-
 class ReActRequest(BaseModel):
     provider: str
     model: str
     task: str
 
-
 class ToolRequest(BaseModel):
     name: str
     input: str
-
 
 @app.get("/health")
 def health():
     return {"ok": True}
 
-
 @app.get("/providers")
 def list_providers():
     return {"providers": llms.list_providers()}
 
-
 @app.get("/models/{provider}")
 def list_models(provider: str):
     return {"models": llms.list_models(provider)}
-
 
 @app.post("/requests/chat")
 def chat(req: ChatRequest):
@@ -69,18 +61,15 @@ def chat(req: ChatRequest):
     output = llms.run(req.provider, req.model, req.messages)
     return {"messages": req.messages + [{"role": "assistant", "content": output}]}
 
-
 @app.post("/agents")
 def create_agent(req: AgentCreateRequest):
     agent_id = str(uuid4())
     store.create_agent(agent_id, req.name, req.model, req.tools, req.system_prompt)
     return {"id": agent_id}
 
-
 @app.get("/agents")
 def list_agents():
     return {"agents": store.list_agents()}
-
 
 @app.get("/agents/{agent_id}")
 def get_agent(agent_id: str):
@@ -90,7 +79,6 @@ def get_agent(agent_id: str):
     tools = store.get_agent_tools(agent_id)
     messages = store.get_agent_messages(agent_id)
     return {"agent": agent, "tools": tools, "messages": messages}
-
 
 @app.post("/agents/{agent_id}/chat")
 def agent_chat(agent_id: str, req: ChatRequest):
@@ -113,10 +101,8 @@ def agent_chat(agent_id: str, req: ChatRequest):
         if tools:
             trace = llms.run_react("openai", agent["model"], req.messages[-1]["content"], tools=tools)
             for step in trace:
-                role = step.get("role", "assistant")
-                content = step.get("content", "")
-                store.add_trace(agent_id, role, content)
-            output = trace[-1]["content"]
+                store.add_trace(agent_id, step["role"], step)
+            output = trace[-1]["content"] if trace else ""
         else:
             output = llms.run("openai", agent["model"], all_messages)
 
@@ -130,23 +116,19 @@ def agent_chat(agent_id: str, req: ChatRequest):
         store.update_agent_status(agent_id, "error")
         raise e
 
-
 @app.post("/requests/react")
 def react(req: ReActRequest):
     trace = llms.run_react(req.provider, req.model, req.task)
     return {"trace": trace}
 
-
 @app.get("/tools")
 def list_tools():
     return {"tools": tools.list()}
-
 
 @app.post("/tools/run")
 def run_tool(req: ToolRequest):
     output = tools.run(req.name, req.input)
     return {"output": output}
-
 
 @app.get("/agents/{agent_id}/traces")
 def get_traces(agent_id: str):

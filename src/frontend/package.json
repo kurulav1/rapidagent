@@ -1,7 +1,7 @@
 {
   "name": "quick-agentic-frontend",
   "private": true,
-   "scripts": {
+  "scripts": {
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\" \"npm:dev:electron\"",
     "dev:web": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
     "dev:backend": "poetry run uvicorn rapidagent.app:app --reload --port 8000 --app-dir src/backend",
@@ -9,9 +9,22 @@
     "dev:electron": "cross-env ELECTRON_DEV=1 electron src/electron/main.js"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mantine/core": "^8.3.2",
+    "@mantine/hooks": "^8.3.2",
+    "@mantine/notifications": "^8.3.2",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@tabler/icons-react": "^3.35.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.544.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.9.3"
+    "react-router-dom": "^7.9.3",
+    "tailwind-merge": "^3.3.1",
+    "tailwind-variants": "^3.1.1",
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

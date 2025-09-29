@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { api } from "../lib/api"
+import { Card, Text, Badge, Modal, Group, Button } from "@mantine/core"
 
 interface Agent {
   id: string
@@ -14,7 +15,7 @@ interface Agent {
 interface Trace {
   timestamp: string
   type: string
-  content: string
+  content: any
 }
 
 export default function AgentMonitorPage() {
@@ -22,22 +23,20 @@ export default function AgentMonitorPage() {
   const [agent, setAgent] = useState<Agent | null>(null)
   const [traces, setTraces] = useState<Trace[]>([])
   const [loading, setLoading] = useState(true)
+  const [opened, setOpened] = useState(false)
+  const [toolDetails, setToolDetails] = useState<any>(null)
 
   useEffect(() => {
     if (!agentId) return
-
     const fetchData = () => {
       api<{ agent: Agent }>(`/agents/${agentId}`)
         .then(data => setAgent(data.agent))
         .catch(() => setAgent(null))
-
       api<{ traces: Trace[] }>(`/agents/${agentId}/traces`)
         .then(data => setTraces(data.traces))
         .catch(() => setTraces([]))
-
       setLoading(false)
     }
-
     fetchData()
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
@@ -54,49 +53,62 @@ export default function AgentMonitorPage() {
         </Link>
       </div>
 
-      <div className="border rounded p-4 bg-gray-50">
-        <h1 className="text-xl font-bold mb-2">{agent.name}</h1>
-        <p className="text-sm text-gray-700">
+      <Card shadow="sm" padding="lg" radius="md" withBorder>
+        <Text fw={700} size="lg">{agent.name}</Text>
+        <Text size="sm" c="dimmed">
           Model: {agent.model} • Status:{" "}
-          <span
-            className={
-              agent.status === "idle"
-                ? "text-green-600"
-                : agent.status === "running"
-                ? "text-blue-600"
-                : "text-red-600"
-            }
-          >
+          <Badge color={
+            agent.status === "idle" ? "green" :
+            agent.status === "running" ? "blue" : "red"
+          }>
             {agent.status}
-          </span>
-        </p>
-        <p className="text-xs text-gray-500">
+          </Badge>
+        </Text>
+        <Text size="xs" c="dimmed">
           Created: {new Date(agent.created_at).toLocaleString()} • Last seen:{" "}
           {agent.last_seen ? new Date(agent.last_seen).toLocaleString() : "–"}
-        </p>
-      </div>
+        </Text>
+      </Card>
 
       <div>
-        <h2 className="font-medium mb-2">Trace</h2>
+        <Text fw={600} mb="sm">Trace</Text>
         {traces.length === 0 ? (
-          <p className="text-sm text-gray-500">No traces yet</p>
+          <Text size="sm" c="dimmed">No traces yet</Text>
         ) : (
           <div className="space-y-2">
             {traces.map((t, i) => (
-              <div
-                key={i}
-                className="border rounded p-2 bg-white text-sm shadow-sm"
-              >
-                <span className="text-xs text-gray-400 mr-2">
+              <Card key={i} padding="sm" withBorder radius="md">
+                <Text size="xs" c="dimmed">
                   {new Date(t.timestamp).toLocaleTimeString()}
-                </span>
-                <span className="font-medium">{t.type}:</span>{" "}
-                <span>{t.content}</span>
-              </div>
+                </Text>
+                {t.type === "action" && typeof t.content === "object" ? (
+                  <Button
+                    variant="subtle"
+                    color="blue"
+                    onClick={() => { setToolDetails(t.content); setOpened(true) }}
+                  >
+                    🔧 Action: {t.content.tool}
+                  </Button>
+                ) : t.type === "observation" && typeof t.content === "object" ? (
+                  <Text size="sm">Observation: {t.content.output}</Text>
+                ) : (
+                  <Text size="sm">{t.type}: {typeof t.content === "string" ? t.content : JSON.stringify(t.content)}</Text>
+                )}
+              </Card>
             ))}
           </div>
         )}
       </div>
+
+      <Modal opened={opened} onClose={() => setOpened(false)} title="Tool Details">
+        {toolDetails && (
+          <div>
+            <Text><b>Tool:</b> {toolDetails.tool}</Text>
+            {"input" in toolDetails && <Text><b>Input:</b> {toolDetails.input}</Text>}
+            {"output" in toolDetails && <Text><b>Output:</b> {toolDetails.output}</Text>}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

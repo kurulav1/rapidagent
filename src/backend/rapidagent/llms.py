@@ -43,41 +43,70 @@ class LLMRegistry:
         provider: str,
         model: str,
         task: str,
-        max_steps: int = 5,
+        max_steps: int = 6,
         tools: Optional[List[str]] = None,
-    ) -> List[Dict[str, str]]:
-        system_prompt = (
-            "You are an intelligent agent. "
-            "If a tool is needed, respond ONLY in JSON like {\"action\":\"tool_name\", \"input\":\"...\"}. "
-            "Otherwise, respond normally."
+    ) -> List[Dict[str, Any]]:
+        allowed = tools or []
+        tool_list = ", ".join(allowed) if allowed else "none"
+        schema = (
+            "Respond ONLY as a single-line JSON object per turn using one of these schemas:\n"
+            "{\"type\":\"thought\",\"content\":\"...\"}\n"
+            "{\"type\":\"action\",\"action\":\"tool_name\",\"input\":\"...\"}\n"
+            "{\"type\":\"final\",\"content\":\"...\"}\n"
+            f"Allowed tools: {tool_list}."
         )
-        if tools:
-            system_prompt += f" Allowed tools: {', '.join(tools)}."
-
+        system_prompt = (
+            "You are a ReAct agent. Think step-by-step. Use tools when helpful. "
+            "Follow the JSON schema strictly. Do not include any non-JSON text."
+        )
         messages = [
             {"role": "system", "content": system_prompt},
+            {"role": "system", "content": schema},
             {"role": "user", "content": task},
         ]
-        trace: List[Dict[str, str]] = []
+        trace: List[Dict[str, Any]] = []
 
-        for step in range(max_steps):
-            output = self.run(provider, model, messages)
-            trace.append({"role": "assistant", "content": output})
-
+        for _ in range(max_steps):
+            output = self.run(provider, model, messages).strip()
             try:
-                action = json.loads(output)
-                if isinstance(action, dict) and "action" in action and "input" in action:
-                    tool_name = action["action"]
-                    tool_input = action["input"]
-                    if tools and tool_name not in tools:
-                        result = f"Error: Tool {tool_name} not allowed."
-                    else:
-                        result = self.tools.run(tool_name, tool_input)
-                    trace.append({"role": "tool", "name": tool_name, "content": result})
-                    messages.append({"role": "assistant", "content": output})
-                    messages.append({"role": "system", "content": f"Tool {tool_name} returned: {result}"})
-                    continue
+                parsed = json.loads(output)
             except Exception:
+                trace.append({"role": "final", "content": output})
                 return trace
 
+            t = str(parsed.get("type", "")).lower()
+
+            if t == "thought":
+                content = str(parsed.get("content", ""))
+                trace.append({"role": "thought", "content": content})
+                messages.append({"role": "assistant", "content": output})
+                continue
+
+            if t == "action":
+                tool_name = str(parsed.get("action", ""))
+                tool_input = str(parsed.get("input", ""))
+                action_entry = {"tool": tool_name, "input": tool_input}
+                if allowed and tool_name not in allowed:
+                    observation = f"Error: Tool {tool_name} not allowed."
+                    trace.append({"role": "action", **action_entry})
+                    trace.append({"role": "observation", "tool": tool_name, "output": observation})
+                    messages.append({"role": "assistant", "content": output})
+                    messages.append({"role": "system", "content": f"Observation: {observation}"})
+                    continue
+                result = self.tools.run(tool_name, tool_input)
+                trace.append({"role": "action", **action_entry})
+                trace.append({"role": "observation", "tool": tool_name, "output": str(result)})
+                messages.append({"role": "assistant", "content": output})
+                messages.append({"role": "system", "content": f"Observation: {result}"})
+                continue
+
+            if t == "final":
+                content = str(parsed.get("content", ""))
+                trace.append({"role": "final", "content": content})
+                return trace
+
+            trace.append({"role": "final", "content": output})
+            return trace
+
+        trace.append({"role": "final", "content": ""})
         return trace

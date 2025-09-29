@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from datetime import datetime
 
 class Store:
@@ -169,8 +170,10 @@ class Store:
         return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in cur.fetchall()]
 
     # traces
-    def add_trace(self, agent_id: str, type: str, content: str):
+    def add_trace(self, agent_id: str, type: str, content: dict | str):
         cur = self.conn.cursor()
+        if isinstance(content, dict):
+            content = json.dumps(content)
         cur.execute(
             "INSERT INTO traces (agent_id, type, content, timestamp) VALUES (?, ?, ?, ?)",
             (agent_id, type, content, datetime.utcnow().isoformat()),
@@ -183,4 +186,12 @@ class Store:
             "SELECT type, content, timestamp FROM traces WHERE agent_id=? ORDER BY id ASC",
             (agent_id,),
         )
-        return [{"type": r[0], "content": r[1], "timestamp": r[2]} for r in cur.fetchall()]
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            try:
+                content = json.loads(r[1])
+            except Exception:
+                content = r[1]
+            result.append({"type": r[0], "content": content, "timestamp": r[2]})
+        return result

@@ -1,5 +1,17 @@
 import { useEffect, useState } from "react"
 import { api } from "../lib/api"
+import {
+  Button,
+  Card,
+  Checkbox,
+  Group,
+  Select,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core"
 
 interface Agent {
   id: string
@@ -55,7 +67,7 @@ export default function AgentsPage() {
     await api("/agents", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, model, tools: selectedTools })
+      body: JSON.stringify({ name, model, tools: selectedTools }),
     })
     setName("")
     setSelectedTools([])
@@ -63,78 +75,83 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Agents</h1>
+    <Stack p="md">
+      <Title order={2}>Agents</Title>
 
-      <div className="mb-6 p-4 border rounded bg-gray-50">
-        <h2 className="font-semibold mb-2">Create Agent</h2>
-        <input
-          className="border p-2 rounded mr-2"
-          placeholder="Agent name"
-          value={name}
-          onChange={e => setName(e.target.value)}
-        />
-        <select
-          className="border p-2 rounded mr-2"
-          value={model}
-          onChange={e => setModel(e.target.value)}
-        >
-          {models.map(m => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+      <Card withBorder shadow="sm" p="md">
+        <Stack>
+          <Title order={4}>Create Agent</Title>
+          <Group>
+            <TextInput
+              placeholder="Agent name"
+              value={name}
+              onChange={e => setName(e.currentTarget.value)}
+              style={{ flex: 1 }}
+            />
+            <Select
+              data={models}
+              value={model}
+              onChange={val => setModel(val || "")}
+              placeholder="Select model"
+              style={{ flex: 1 }}
+            />
+          </Group>
 
-        <div className="mt-3">
-          <p className="font-medium mb-1">Assign Tools:</p>
-          <div className="flex flex-col gap-1">
+          <Stack gap="xs">
+            <Text fw={500} size="sm">
+              Assign Tools
+            </Text>
             {tools.map(tool => (
-              <label key={tool.name} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selectedTools.includes(tool.name)}
-                  onChange={() => toggleTool(tool.name)}
-                />
-                <span>{tool.name}</span>
-                <span className="text-sm text-gray-500">
-                  {tool.description}
-                </span>
-              </label>
+              <Checkbox
+                key={tool.name}
+                label={`${tool.name} – ${tool.description}`}
+                checked={selectedTools.includes(tool.name)}
+                onChange={() => toggleTool(tool.name)}
+              />
             ))}
-          </div>
-        </div>
+          </Stack>
 
-        <button
-          onClick={createAgent}
-          className="mt-3 bg-black text-white px-4 py-2 rounded"
-        >
-          Create
-        </button>
-      </div>
+          <Button onClick={createAgent}>Create</Button>
+        </Stack>
+      </Card>
 
-      <h2 className="font-semibold mb-2">Existing Agents</h2>
-      <div className="grid gap-3">
-        {agents.map(agent => (
-          <div key={agent.id} className="p-3 border rounded bg-white shadow">
-            <h3 className="font-bold">{agent.name}</h3>
-            <p>Model: {agent.model}</p>
-            <p>Status: {agent.status}</p>
-            <p>
-              Tools:{" "}
-              {agent.tools && agent.tools.length > 0
-                ? agent.tools.join(", ")
-                : "None"}
-            </p>
-            <p className="text-sm text-gray-500">
-              Created:{" "}
-              {agent.created_at
-                ? new Date(agent.created_at).toLocaleString()
-                : "Unknown"}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
+      <Title order={4}>Existing Agents</Title>
+      {agents.length === 0 ? (
+        <Text c="dimmed" size="sm">
+          No agents yet
+        </Text>
+      ) : (
+        <Table striped highlightOnHover withBorder withColumnBorders>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Name</Table.Th>
+              <Table.Th>Model</Table.Th>
+              <Table.Th>Status</Table.Th>
+              <Table.Th>Tools</Table.Th>
+              <Table.Th>Created</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {agents.map(agent => (
+              <Table.Tr key={agent.id}>
+                <Table.Td>{agent.name}</Table.Td>
+                <Table.Td>{agent.model}</Table.Td>
+                <Table.Td>{agent.status}</Table.Td>
+                <Table.Td>
+                  {agent.tools && agent.tools.length > 0
+                    ? agent.tools.join(", ")
+                    : "None"}
+                </Table.Td>
+                <Table.Td>
+                  {agent.created_at
+                    ? new Date(agent.created_at).toLocaleString()
+                    : "Unknown"}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+    </Stack>
   )
 }
