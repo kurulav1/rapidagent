@@ -2,6 +2,7 @@ import sqlite3
 import os
 import json
 from datetime import datetime
+from typing import Dict, Any, List
 
 class Store:
     def __init__(self, path: str):
@@ -11,16 +12,12 @@ class Store:
 
     def _init_schema(self):
         cur = self.conn.cursor()
-
-        # kv store
         cur.execute("""
             CREATE TABLE IF NOT EXISTS kv (
                 key TEXT PRIMARY KEY,
                 value TEXT
             )
         """)
-
-        # agents
         cur.execute("""
             CREATE TABLE IF NOT EXISTS agents (
                 id TEXT PRIMARY KEY,
@@ -36,8 +33,6 @@ class Store:
         cols = [row[1] for row in cur.fetchall()]
         if "system_prompt" not in cols:
             cur.execute("ALTER TABLE agents ADD COLUMN system_prompt TEXT")
-
-        # agent_tools
         cur.execute("""
             CREATE TABLE IF NOT EXISTS agent_tools (
                 agent_id TEXT,
@@ -45,8 +40,6 @@ class Store:
                 PRIMARY KEY (agent_id, tool)
             )
         """)
-
-        # agent_messages
         cur.execute("""
             CREATE TABLE IF NOT EXISTS agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,8 +49,6 @@ class Store:
                 timestamp TEXT
             )
         """)
-
-        # traces
         cur.execute("""
             CREATE TABLE IF NOT EXISTS traces (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,10 +58,16 @@ class Store:
                 timestamp TEXT
             )
         """)
-
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tools (
+                name TEXT PRIMARY KEY,
+                description TEXT,
+                type TEXT,
+                config TEXT
+            )
+        """)
         self.conn.commit()
 
-    # kv
     def get_kv(self, key: str):
         cur = self.conn.cursor()
         cur.execute("SELECT value FROM kv WHERE key=?", (key,))
@@ -82,7 +79,6 @@ class Store:
         cur.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", (key, value))
         self.conn.commit()
 
-    # agents
     def create_agent(self, agent_id: str, name: str, model: str, tools, system_prompt: str | None = None):
         cur = self.conn.cursor()
         cur.execute(
@@ -139,7 +135,6 @@ class Store:
         cur.execute("UPDATE agents SET system_prompt=? WHERE id=?", (prompt, agent_id))
         self.conn.commit()
 
-    # tools
     def set_agent_tools(self, agent_id: str, tools):
         cur = self.conn.cursor()
         cur.execute("DELETE FROM agent_tools WHERE agent_id=?", (agent_id,))
@@ -152,7 +147,6 @@ class Store:
         cur.execute("SELECT tool FROM agent_tools WHERE agent_id=?", (agent_id,))
         return [r[0] for r in cur.fetchall()]
 
-    # messages
     def add_agent_message(self, agent_id: str, role: str, content: str):
         cur = self.conn.cursor()
         cur.execute(
@@ -169,7 +163,6 @@ class Store:
         )
         return [{"role": r[0], "content": r[1], "timestamp": r[2]} for r in cur.fetchall()]
 
-    # traces
     def add_trace(self, agent_id: str, type: str, content: dict | str):
         cur = self.conn.cursor()
         if isinstance(content, dict):
@@ -195,3 +188,42 @@ class Store:
                 content = r[1]
             result.append({"type": r[0], "content": content, "timestamp": r[2]})
         return result
+
+    def upsert_tool(self, name: str, description: str, type_: str, config: Dict[str, Any] | None):
+        cur = self.conn.cursor()
+        cfg = json.dumps(config or {})
+        cur.execute(
+            "INSERT INTO tools (name, description, type, config) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET description=excluded.description, type=excluded.type, config=excluded.config",
+            (name, description, type_, cfg),
+        )
+        self.conn.commit()
+
+    def delete_tool(self, name: str):
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM tools WHERE name=?", (name,))
+        self.conn.commit()
+
+    def list_tools(self) -> List[Dict[str, Any]]:
+        cur = self.conn.cursor()
+        cur.execute("SELECT name, description, type, config FROM tools ORDER BY name ASC")
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            try:
+                cfg = json.loads(r[3]) if r[3] else {}
+            except Exception:
+                cfg = {}
+            result.append({"name": r[0], "description": r[1], "type": r[2], "config": cfg})
+        return result
+
+    def get_tool(self, name: str) -> Dict[str, Any] | None:
+        cur = self.conn.cursor()
+        cur.execute("SELECT name, description, type, config FROM tools WHERE name=?", (name,))
+        r = cur.fetchone()
+        if not r:
+            return None
+        try:
+            cfg = json.loads(r[3]) if r[3] else {}
+        except Exception:
+            cfg = {}
+        return {"name": r[0], "description": r[1], "type": r[2], "config": cfg}

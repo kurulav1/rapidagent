@@ -2,13 +2,13 @@ import os
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
 from .store import Store
-from .tools import ToolRegistry
+from .tools import ToolRegistry, CalculatorTool, SearchTool
 import json
 
 class LLMRegistry:
-    def __init__(self, store: Store, tools: ToolRegistry):
+    def __init__(self, store: Store, tools: Optional[ToolRegistry] = None):
         self.store = store
-        self.tools = tools
+        self.tools = tools or ToolRegistry([CalculatorTool(), SearchTool()])
         if not self.store.get_kv("llm_default"):
             self.store.set_kv("llm_default", "openai:gpt-4o-mini")
         self.providers = {"openai": self._run_openai}
@@ -65,7 +65,6 @@ class LLMRegistry:
             {"role": "user", "content": task},
         ]
         trace: List[Dict[str, Any]] = []
-
         for _ in range(max_steps):
             output = self.run(provider, model, messages).strip()
             try:
@@ -73,15 +72,12 @@ class LLMRegistry:
             except Exception:
                 trace.append({"role": "final", "content": output})
                 return trace
-
             t = str(parsed.get("type", "")).lower()
-
             if t == "thought":
                 content = str(parsed.get("content", ""))
                 trace.append({"role": "thought", "content": content})
                 messages.append({"role": "assistant", "content": output})
                 continue
-
             if t == "action":
                 tool_name = str(parsed.get("action", ""))
                 tool_input = str(parsed.get("input", ""))
@@ -99,14 +95,11 @@ class LLMRegistry:
                 messages.append({"role": "assistant", "content": output})
                 messages.append({"role": "system", "content": f"Observation: {result}"})
                 continue
-
             if t == "final":
                 content = str(parsed.get("content", ""))
                 trace.append({"role": "final", "content": content})
                 return trace
-
             trace.append({"role": "final", "content": output})
             return trace
-
         trace.append({"role": "final", "content": ""})
         return trace

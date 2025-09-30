@@ -15,6 +15,11 @@ interface AgentDetails {
   messages: { role: string; content: string; timestamp?: string }[]
 }
 
+interface Trace {
+  role: string
+  content: string
+}
+
 export default function ChatPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string>("")
@@ -43,7 +48,7 @@ export default function ChatPage() {
     setChat(newChat)
     setMessage("")
     try {
-      const res = await api<{ messages: { role: string; content: string }[] }>(
+      const res = await api<{ traces: Trace[] }>(
         `/agents/${selectedAgent}/chat`,
         {
           method: "POST",
@@ -51,11 +56,21 @@ export default function ChatPage() {
           body: JSON.stringify({ messages: [{ role: "user", content: message }] }),
         }
       )
-      setChat(res.messages)
+      const finalReplies = res.traces
+        .filter(t => t.role === "final")
+        .map(t => ({ role: "assistant", content: t.content }))
+      setChat([...newChat, ...finalReplies])
     } catch (e) {
       console.error(e)
     }
-    setTimeout(() => viewport.current?.scrollTo({ top: viewport.current.scrollHeight, behavior: "smooth" }), 100)
+    setTimeout(
+      () =>
+        viewport.current?.scrollTo({
+          top: viewport.current.scrollHeight,
+          behavior: "smooth",
+        }),
+      100
+    )
   }
 
   return (
@@ -64,23 +79,26 @@ export default function ChatPage() {
         label="Select agent"
         value={selectedAgent}
         onChange={val => setSelectedAgent(val || "")}
-        data={agents.map(a => ({ value: a.id, label: `${a.name} (${a.model}) – ${a.status}` }))}
+        data={agents.map(a => ({
+          value: a.id,
+          label: `${a.name} (${a.model}) – ${a.status}`,
+        }))}
       />
 
       <Card withBorder shadow="sm" className="flex-1 flex flex-col">
         <ScrollArea style={{ flex: 1 }} viewportRef={viewport}>
           <Stack spacing="xs" p="md">
             {chat.map((msg, i) => (
-              <Group
-                key={i}
-                position={msg.role === "user" ? "right" : "left"}
-              >
+              <Group key={i} position={msg.role === "user" ? "right" : "left"}>
                 <Card
                   shadow="sm"
                   radius="md"
                   p="sm"
                   style={{
-                    backgroundColor: msg.role === "user" ? "var(--mantine-color-blue-6)" : "var(--mantine-color-gray-2)",
+                    backgroundColor:
+                      msg.role === "user"
+                        ? "var(--mantine-color-blue-6)"
+                        : "var(--mantine-color-gray-2)",
                     color: msg.role === "user" ? "white" : "black",
                     maxWidth: "75%",
                   }}
@@ -92,7 +110,11 @@ export default function ChatPage() {
           </Stack>
         </ScrollArea>
 
-        <Group p="sm" spacing="sm" style={{ borderTop: "1px solid var(--mantine-color-gray-3)" }}>
+        <Group
+          p="sm"
+          spacing="sm"
+          style={{ borderTop: "1px solid var(--mantine-color-gray-3)" }}
+        >
           <Textarea
             value={message}
             onChange={e => setMessage(e.currentTarget.value)}

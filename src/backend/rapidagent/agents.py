@@ -44,7 +44,7 @@ class AgentRegistry:
             trace = self.llms.run_react("openai", agent["model"], task, tools=tools)
             for step in trace:
                 role = step.get("role", "assistant")
-                content = step.get("content", "")
+                content = {k: v for k, v in step.items() if k != "role"}
                 self.store.add_trace(agent_id, role, content)
             final = next((s["content"] for s in reversed(trace) if s.get("role") == "final"), "")
             self.store.update_agent_status(agent_id, "idle")
@@ -61,19 +61,18 @@ class AgentRegistry:
         self.store.update_agent_status(agent_id, "running")
         try:
             tools = self.store.get_agent_tools(agent_id)
-            messages = []
             for step in self.llms.run_react("openai", agent["model"], task, tools=tools):
                 role = step.get("role")
-                content = step.get("content", "")
+                content = {k: v for k, v in step.items() if k != "role"}
                 self.store.add_trace(agent_id, role, content)
                 if role == "thought":
-                    yield {"type": "thought", "content": content}
+                    yield {"type": "thought", "content": step.get("content", "")}
                 elif role == "action":
-                    yield {"type": "action", "content": content}
+                    yield {"type": "action", "tool": step.get("tool"), "input": step.get("input")}
                 elif role == "observation":
-                    yield {"type": "observation", "content": content}
+                    yield {"type": "observation", "tool": step.get("tool"), "output": step.get("output")}
                 elif role == "final":
-                    yield {"type": "final", "content": content}
+                    yield {"type": "final", "content": step.get("content", "")}
             self.store.update_agent_status(agent_id, "idle")
         except Exception as e:
             self.store.update_agent_status(agent_id, "error")

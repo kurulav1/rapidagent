@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { api } from "../lib/api"
-import { Card, Text, Badge, Modal, Group, Button } from "@mantine/core"
+import {
+  Card,
+  Text,
+  Title,
+  Group,
+  Stack,
+  Badge,
+  Loader,
+  Button,
+} from "@mantine/core"
 
 interface Agent {
   id: string
@@ -23,92 +32,155 @@ export default function AgentMonitorPage() {
   const [agent, setAgent] = useState<Agent | null>(null)
   const [traces, setTraces] = useState<Trace[]>([])
   const [loading, setLoading] = useState(true)
-  const [opened, setOpened] = useState(false)
-  const [toolDetails, setToolDetails] = useState<any>(null)
 
   useEffect(() => {
     if (!agentId) return
+
     const fetchData = () => {
       api<{ agent: Agent }>(`/agents/${agentId}`)
-        .then(data => setAgent(data.agent))
+        .then((data) => setAgent(data.agent))
         .catch(() => setAgent(null))
+
       api<{ traces: Trace[] }>(`/agents/${agentId}/traces`)
-        .then(data => setTraces(data.traces))
+        .then((data) => setTraces(data.traces))
         .catch(() => setTraces([]))
+
       setLoading(false)
     }
+
     fetchData()
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
   }, [agentId])
 
-  if (loading) return <p className="p-6">Loading agent info...</p>
-  if (!agent) return <p className="p-6">Agent not found.</p>
+  if (loading) return <Loader m="xl" />
+  if (!agent) return <Text p="md">Agent not found.</Text>
+
+  const renderContent = (content: any) => {
+    if (typeof content === "string") return content
+    try {
+      return <pre style={{ margin: 0 }}>{JSON.stringify(content, null, 2)}</pre>
+    } catch {
+      return String(content)
+    }
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <Link to="/monitor" className="text-blue-600 hover:underline text-sm">
-          ← Back to monitor list
+    <Stack p="md" spacing="lg">
+      <Group>
+        <Link to="/monitor">
+          <Button variant="subtle" size="xs">
+            ← Back to monitor list
+          </Button>
         </Link>
-      </div>
+      </Group>
 
-      <Card shadow="sm" padding="lg" radius="md" withBorder>
-        <Text fw={700} size="lg">{agent.name}</Text>
-        <Text size="sm" c="dimmed">
-          Model: {agent.model} • Status:{" "}
-          <Badge color={
-            agent.status === "idle" ? "green" :
-            agent.status === "running" ? "blue" : "red"
-          }>
+      <Card withBorder shadow="sm">
+        <Title order={2}>{agent.name}</Title>
+        <Group spacing="xs" mt="xs">
+          <Text size="sm" c="dimmed">
+            Model: {agent.model} • Status:
+          </Text>
+          <Badge
+            color={
+              agent.status === "idle"
+                ? "green"
+                : agent.status === "running"
+                ? "blue"
+                : "red"
+            }
+          >
             {agent.status}
           </Badge>
-        </Text>
-        <Text size="xs" c="dimmed">
+        </Group>
+        <Text size="xs" c="dimmed" mt="xs">
           Created: {new Date(agent.created_at).toLocaleString()} • Last seen:{" "}
           {agent.last_seen ? new Date(agent.last_seen).toLocaleString() : "–"}
         </Text>
       </Card>
 
-      <div>
-        <Text fw={600} mb="sm">Trace</Text>
+      <Stack spacing="sm">
+        <Title order={4}>Trace</Title>
         {traces.length === 0 ? (
-          <Text size="sm" c="dimmed">No traces yet</Text>
+          <Text size="sm" c="dimmed">
+            No traces yet
+          </Text>
         ) : (
-          <div className="space-y-2">
-            {traces.map((t, i) => (
-              <Card key={i} padding="sm" withBorder radius="md">
-                <Text size="xs" c="dimmed">
-                  {new Date(t.timestamp).toLocaleTimeString()}
-                </Text>
-                {t.type === "action" && typeof t.content === "object" ? (
-                  <Button
-                    variant="subtle"
-                    color="blue"
-                    onClick={() => { setToolDetails(t.content); setOpened(true) }}
-                  >
-                    🔧 Action: {t.content.tool}
-                  </Button>
-                ) : t.type === "observation" && typeof t.content === "object" ? (
-                  <Text size="sm">Observation: {t.content.output}</Text>
-                ) : (
-                  <Text size="sm">{t.type}: {typeof t.content === "string" ? t.content : JSON.stringify(t.content)}</Text>
-                )}
-              </Card>
-            ))}
-          </div>
+          traces.map((t, i) => {
+            const ts = new Date(t.timestamp).toLocaleTimeString()
+            if (t.type === "thought") {
+              return (
+                <Card key={i} withBorder padding="sm" shadow="xs">
+                  <Group>
+                    <Badge color="gray">Thought</Badge>
+                    <Text size="xs" c="dimmed">
+                      {ts}
+                    </Text>
+                  </Group>
+                  {renderContent(t.content)}
+                </Card>
+              )
+            }
+            if (t.type === "action") {
+              return (
+                <Card key={i} withBorder padding="sm" shadow="xs">
+                  <Group position="apart">
+                    <Group>
+                      <Badge color="blue">Action</Badge>
+                      <Text size="xs" c="dimmed">
+                        {ts}
+                      </Text>
+                    </Group>
+                    <Link to={`/monitor/${agentId}/tools/${t.content.tool}`}>
+                      <Button size="xs" variant="light">
+                        View runs
+                      </Button>
+                    </Link>
+                  </Group>
+                  <Text>
+                    <b>Tool:</b> {t.content.tool}
+                  </Text>
+                  <Text>
+                    <b>Input:</b> {t.content.input}
+                  </Text>
+                </Card>
+              )
+            }
+            if (t.type === "observation") {
+              return (
+                <Card key={i} withBorder padding="sm" shadow="xs">
+                  <Group>
+                    <Badge color="teal">Observation</Badge>
+                    <Text size="xs" c="dimmed">
+                      {ts}
+                    </Text>
+                  </Group>
+                  <Text>
+                    <b>Tool:</b> {t.content.tool}
+                  </Text>
+                  <Text>
+                    <b>Output:</b> {renderContent(t.content.output)}
+                  </Text>
+                </Card>
+              )
+            }
+            if (t.type === "final") {
+              return (
+                <Card key={i} withBorder padding="sm" shadow="xs">
+                  <Group>
+                    <Badge color="violet">Final</Badge>
+                    <Text size="xs" c="dimmed">
+                      {ts}
+                    </Text>
+                  </Group>
+                  {renderContent(t.content)}
+                </Card>
+              )
+            }
+            return null
+          })
         )}
-      </div>
-
-      <Modal opened={opened} onClose={() => setOpened(false)} title="Tool Details">
-        {toolDetails && (
-          <div>
-            <Text><b>Tool:</b> {toolDetails.tool}</Text>
-            {"input" in toolDetails && <Text><b>Input:</b> {toolDetails.input}</Text>}
-            {"output" in toolDetails && <Text><b>Output:</b> {toolDetails.output}</Text>}
-          </div>
-        )}
-      </Modal>
-    </div>
+      </Stack>
+    </Stack>
   )
 }
