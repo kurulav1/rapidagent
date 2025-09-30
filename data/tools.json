@@ -1,0 +1,24 @@
+[
+  {
+    "name": "parroter",
+    "description": "parrots text.",
+    "type": "python",
+    "config": {
+      "code": "def run(input: str):\n    \"\"\"\n    Args:\n        input (str): text to  parrot\n    Returns:\n        dict\n\n        output: str \u2013 parroted text\n    \"\"\"\n    # TODO: implement your logic here\n    return { \"output\": input }\n",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "string",
+          "description": "text to  parrot"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "string",
+          "description": "parroted text"
+        }
+      ]
+    }
+  }
+]

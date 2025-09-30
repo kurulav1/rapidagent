@@ -1,11 +1,11 @@
-import { Routes, Route, Link } from "react-router-dom";
+import { Routes, Route, Link } from "react-router-dom"
 import {
   AppShell,
   Button,
   Group,
   ScrollArea,
   useMantineColorScheme,
-} from "@mantine/core";
+} from "@mantine/core"
 import {
   IconUsers,
   IconMessageCircle,
@@ -14,17 +14,19 @@ import {
   IconTool,
   IconSun,
   IconMoonStars,
-} from "@tabler/icons-react";
-import AgentsPage from "./pages/AgentsPage";
-import MonitorPage from "./pages/MonitorPage";
-import AgentMonitorPage from "./pages/AgentMonitorPage";
-import ChatPage from "./pages/ChatPage";
-import ToolsPage from "./pages/ToolsPage";
-import KeysPage from "./pages/KeysPage";
-import ToolDetailPage from "./pages/ToolDetailPage";
+  IconTopologyStar3,
+} from "@tabler/icons-react"
+import AgentsPage from "./pages/AgentsPage"
+import MonitorPage from "./pages/MonitorPage"
+import AgentMonitorPage from "./pages/AgentMonitorPage"
+import ChatPage from "./pages/ChatPage"
+import ToolsPage from "./pages/ToolsPage"
+import KeysPage from "./pages/KeysPage"
+import ToolDetailPage from "./pages/ToolDetailPage"
+import PipelinesPage from "./pages/PipelinesPage"
 
 function Sidebar() {
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme()
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -68,6 +70,15 @@ function Sidebar() {
           </Button>
           <Button
             component={Link}
+            to="/pipelines"
+            variant="subtle"
+            fullWidth
+            leftSection={<IconTopologyStar3 size={16} />}
+          >
+            Pipelines
+          </Button>
+          <Button
+            component={Link}
             to="/keys"
             variant="subtle"
             fullWidth
@@ -95,7 +106,7 @@ function Sidebar() {
         </Button>
       </div>
     </div>
-  );
+  )
 }
 
 export default function App() {
@@ -115,10 +126,14 @@ export default function App() {
           <Route path="/monitor/:agentId" element={<AgentMonitorPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/tools" element={<ToolsPage />} />
+          <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/keys" element={<KeysPage />} />
-          <Route path="/monitor/:agentId/tools/:toolName" element={<ToolDetailPage />} />
+          <Route
+            path="/monitor/:agentId/tools/:toolName"
+            element={<ToolDetailPage />}
+          />
         </Routes>
       </AppShell.Main>
     </AppShell>
-  );
+  )
 }

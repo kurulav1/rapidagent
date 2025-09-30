@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.pyc
 *.so
 *.egg
 *.egg-info/
@@ -41,3 +42,6 @@ Thumbs.db
 htmlcov/
 .tox/
 .pytest_cache/
+
+*.db-shm
+*.db-wal
