@@ -1,0 +1,12 @@
+# Dockerfile.backend
+FROM python:3.11-slim
+
+WORKDIR /app
+RUN pip install poetry
+
+COPY src/backend/pyproject.toml src/backend/poetry.lock* /app/
+RUN poetry install --no-root --no-dev
+
+COPY src/backend /app
+
+CMD ["poetry", "run", "uvicorn", "rapidagent.app:app", "--host", "0.0.0.0", "--port", "8000"]

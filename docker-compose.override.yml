@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  backend:
+    command: poetry run uvicorn rapidagent.app:app --reload --host 0.0.0.0 --port 8000
+    volumes:
+      - ./src/backend:/app
+
+  frontend:
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    volumes:
+      - ./src/frontend:/app
+    ports:
+      - "5173:5173"
